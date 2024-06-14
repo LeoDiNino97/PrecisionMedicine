@@ -14,9 +14,6 @@ lapply(required_packages, library, character.only = TRUE)
 seed <- 123
 set.seed(seed)
 
-colors <- c("#2EBFA5", "#F26419", "#FDCA40")
-
-
 # Data loading and preprocessing -----------------------------------------------------------
 
 # Project ID
@@ -81,7 +78,6 @@ metad <- data.frame(metad)
 
 rownames(metad) <- colnames(full.data)
 colnames(metad)[1] <- "condition"
-metad
 
 metad[,1] <- as.factor(metad[,1])
 full.data <- cbind(rownames(full.data), full.data)
@@ -90,9 +86,6 @@ dds <- DESeqDataSetFromMatrix(countData=full.data,
                               colData=metad, 
                               design= ~ condition,
                               tidy=TRUE)
-
-View(counts(dds))
-dim(counts(dds))
 
 # Perform normalization
 dds <- estimateSizeFactors(dds)
@@ -167,13 +160,6 @@ expr.C.women <- expr.C.women[genes.c,]
 expr.N.men <- expr.N.men[genes.n,]
 expr.N.women <- expr.N.women[genes.n,]
 
-# Get rid of ENSG00000197976.12_PAR_Y 
-row <- "ENSG00000197976.12_PAR_Y"
-
-expr.N.men <- expr.N.men[!rownames(expr.N.men) %in% row,]
-expr.N.women <- expr.N.men[!rownames(expr.N.women) %in% row,]
-expr.C.men <- expr.N.men[!rownames(expr.C.men) %in% row,]
-expr.C.women <- expr.N.men[!rownames(expr.C.women) %in% row,]
 
 # Differentially Expressed Genes (DEGs) -----------------------------------
 
@@ -189,6 +175,7 @@ fc.men <- fc.men[!names(fc.men) %in% row]
 # t-statistics p-value computation and multiple comparisons adjustments
 pval.fc.men <- sapply(1:nrow(expr.C.men), function(i) (t.test(expr.C.men[i,], 
                                                               expr.N.men[i,]))$p.value)
+
 pval.fc.men.fdr <- p.adjust(pval.fc.men, method="fdr")
 names(pval.fc.men.fdr) <- rownames(expr.C.men)
 pval.fc.men.fdr <- pval.fc.men.fdr[!names(pval.fc.men.fdr) %in% row]
@@ -293,7 +280,8 @@ grid.arrange(
 )
 
 overlapping.DEGs <- intersect(deg.genes.men, deg.genes.women)
-
+overlapping.DEGs.info <- genes.info[overlapping.DEGs,]
+write.csv2(overlapping.DEGs.info, "overlappingDEGS.csv")
 
 
 # Patient Similarity Network ----------------------------------------------
