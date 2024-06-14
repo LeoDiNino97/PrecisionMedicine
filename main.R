@@ -333,9 +333,9 @@ net.final.p <- network(l.comp.p, matrix.type="adjacency",ignore.eval = FALSE, na
 
 
 # Assign communities
-net.final.p  %v% "community" <-  as.character(comm.res.p[,1])
+net.final.p  %v% "Community" <-  as.character(comm.res.p[,1])
 
-ncom <- length(unique(net.final.p  %v% "community"))
+ncom <- length(unique(net.final.p  %v% "Community"))
 
 
 set.seed(420)
@@ -345,15 +345,39 @@ names(pal) <- 1:ncom
 node_mapping <- data.frame(real_label = unique(net.final.p %v% "vertex.names"),
                            new_label = 1:length(unique(net.final.p %v% "vertex.names")))
 
-# Update the network with new labels (to better identify patients we label them with numbers from 1 to 18)
 net.final.p %v% "vertex.names" <- node_mapping$new_label
 
 
 # Plot subnetwork
 
-ggnet2(net.final.p, color = "community", palette =  pal, alpha = 1, 
-       size = 5, edge.color = "grey", edge.alpha = 1, edge.size = 0.15, label = TRUE, label.size = 5)+
-  guides(size = "none") 
+ggnet2(net.final.p, 
+       color = "Community", 
+       palette = pal, 
+       alpha = 10, 
+       size = 5, 
+       edge.color = "lightgrey", 
+       edge.alpha = 1, 
+       edge.size = 0.15, 
+       label = TRUE, 
+       label.size = 3) 
 
+# Some insights on the retrieved communities
+node_mapping$community <- as.character(comm.res.p[,1])
+communities <- clinical.query[clinical.query$submitter_id %in% node_mapping$real_label,]
+community.1 <- communities[communities$submitter_id %in% node_mapping[node_mapping$community == 1,]$real_label,]
+community.2 <- communities[communities$submitter_id %in% node_mapping[node_mapping$community == 2,]$real_label,]
 
+prop.table(table(community.1$ajcc_pathologic_stage))
+prop.table(table(community.2$ajcc_pathologic_stage))
 
+prop.table(table(community.1$vital_status))
+prop.table(table(community.2$vital_status))
+
+prop.table(table(community.1$gender))
+prop.table(table(community.2$gender))
+
+prop.table(table(community.1$race))
+prop.table(table(community.2$race))
+
+prop.table(table(community.1$days_to_death))
+prop.table(table(community.2$days_to_death))
