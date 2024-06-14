@@ -6,7 +6,7 @@ BiocManager::install("DESeq2")
 install.packages("GGally")
 
 required_packages <- c("BiocGenerics", "DESeq2", "psych", "NetworkToolbox", "ggplot2",
-                       "GGally", "sna", "network", "TCGAbiolinks", 
+                       "GGally", "sna", "network", "TCGAbiolinks", "igraph",
                        "SummarizedExperiment", "DT", "latex2exp", "gridExtra", "cowplot")
 
 lapply(required_packages, library, character.only = TRUE)
@@ -17,7 +17,7 @@ set.seed(seed)
 colors <- c("#2EBFA5", "#F26419", "#FDCA40")
 
 
-# 1 - Data loading and preprocessing -----------------------------------------------------------
+# Data loading and preprocessing -----------------------------------------------------------
 
 # Project ID
 proj <- "TCGA-LIHC"
@@ -63,7 +63,7 @@ rm(genes.info.n)
 rm(genes.info.c)
 
 
-# 2 - Data normalization with DeSeq2 ------------------------------------------
+# Data normalization with DeSeq2 ------------------------------------------
 
 all(rownames(rna.expr.data.C) == rownames(rna.expr.data.N))
 full.data <- cbind(rna.expr.data.C, rna.expr.data.N)
@@ -106,7 +106,7 @@ rna.expr.data.C <- as.data.frame(normalized_counts[, 1:dim(rna.expr.data.C)[2]])
 rna.expr.data.N <- as.data.frame(normalized_counts[, (dim(rna.expr.data.C)[2]+1):dim(normalized_counts)[2]])
 
 
-# 3 - Data engineering and cleaning -----------------------------------------------------------
+# Data engineering and cleaning -----------------------------------------------------------
 
 # Let's read the patients which we are interested into
 patients <- read.table("annex_1.txt", stringsAsFactors=FALSE)[,1]
@@ -293,5 +293,79 @@ grid.arrange(
 )
 
 overlapping.DEGs <- intersect(deg.genes.men, deg.genes.women)
+
+
+
+# Patient Similarity Network ----------------------------------------------
+
+# Rebuild back a full dataframe with men and women 
+
+expr.C <- cbind(expr.C.men, expr.C.women)
+
+# Correlation for the cancer network using Pearson correlation
+cor.mat.cp <- corr.test(expr.C, 
+                        use = "pairwise", 
+                        method = "pearson", 
+                        adjust="fdr", 
+                        ci=FALSE)
+
+# Matrix with the pearson correlation coefficient
+rho.cp <- cor.mat.cp$r
+
+# Set the diagonal to zero (we are not interested to the edge with a gene with itself)
+diag(rho.cp) <- 0
+
+# Binary matrix, keep the edge for big correlation
+qval.cp <- cor.mat.cp$p
+qval.cp[lower.tri(qval.cp)] <- t(qval.cp)[lower.tri(qval.cp)]
+
+# Correlation network of cancer samples
+
+# Since the pvalues are all extremely small we use the correlation matrix directly to build the graph
+adj.mat.cp <- rho.cp * (abs(rho.cp) > 0.7)   
+
+
+net.cp <- as.network(adj.mat.cp, directed = FALSE)
+
+# Let's ensure that our graph is connected
+l.comp.p <- component.largest(net.cp, result = "graph")
+l.comp.p <- adj.mat.cp[rownames(l.comp.p), rownames(l.comp.p)]
+
+write.csv2(l.comp.p, "input-matrix-c.csv")
+# python btc-community-c.py input-matrix-c.csv
+
+# Read results 
+
+comm.res.p <- read.csv2("output.txt", header = FALSE)
+rownames(comm.res.p) <- rownames(l.comp.p)
+sort(table(comm.res.p[,1]), decreasing = T)
+length(table(comm.res.p[,1]))
+
+net.final.p <- network(l.comp.p, matrix.type="adjacency",ignore.eval = FALSE, names.eval = "weights", directed = F)
+
+
+# Assign communities
+net.final.p  %v% "community" <-  as.character(comm.res.p[,1])
+
+ncom <- length(unique(net.final.p  %v% "community"))
+
+
+set.seed(420)
+pal <- sample(colors(distinct = T), ncom)
+names(pal) <- 1:ncom
+
+node_mapping <- data.frame(real_label = unique(net.final.p %v% "vertex.names"),
+                           new_label = 1:length(unique(net.final.p %v% "vertex.names")))
+
+# Update the network with new labels (to better identify patients we label them with numbers from 1 to 18)
+net.final.p %v% "vertex.names" <- node_mapping$new_label
+
+
+# Plot subnetwork
+
+ggnet2(net.final.p, color = "community", palette =  pal, alpha = 1, 
+       size = 5, edge.color = "grey", edge.alpha = 1, edge.size = 0.15, label = TRUE, label.size = 5)+
+  guides(size = "none") 
+
 
 
