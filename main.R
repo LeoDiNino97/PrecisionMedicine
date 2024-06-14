@@ -7,7 +7,7 @@ install.packages("GGally")
 
 required_packages <- c("BiocGenerics", "DESeq2", "psych", "NetworkToolbox", "ggplot2",
                        "GGally", "sna", "network", "TCGAbiolinks", 
-                       "SummarizedExperiment", "DT", "latex2exp", "gridExtra")
+                       "SummarizedExperiment", "DT", "latex2exp", "gridExtra", "cowplot")
 
 lapply(required_packages, library, character.only = TRUE)
 
@@ -30,6 +30,7 @@ rna.query.C <- GDCquery(project = proj, data.category = "Transcriptome Profiling
                         sample.type = "Primary Tumor")
 
 GDCdownload(query = rna.query.C, directory = directory, method = "api")
+
 rna.data.C <- GDCprepare(rna.query.C, directory = directory)
 rna.expr.data.C <- assay(rna.data.C)
 genes.info.c <- BiocGenerics::as.data.frame(rowRanges(rna.data.C))
@@ -42,6 +43,7 @@ rna.query.N <- GDCquery(project = proj, data.category = "Transcriptome Profiling
                         sample.type = "Solid Tissue Normal")
 
 GDCdownload(query = rna.query.N, directory = directory, method = "api")
+
 rna.data.N <- GDCprepare(rna.query.N, directory = directory)
 rna.expr.data.N <- assay(rna.data.N)
 genes.info.n <- BiocGenerics::as.data.frame(rowRanges(rna.data.N))
@@ -165,7 +167,131 @@ expr.C.women <- expr.C.women[genes.c,]
 expr.N.men <- expr.N.men[genes.n,]
 expr.N.women <- expr.N.women[genes.n,]
 
+# Get rid of ENSG00000197976.12_PAR_Y 
+row <- "ENSG00000197976.12_PAR_Y"
+
+expr.N.men <- expr.N.men[!rownames(expr.N.men) %in% row,]
+expr.N.women <- expr.N.men[!rownames(expr.N.women) %in% row,]
+expr.C.men <- expr.N.men[!rownames(expr.C.men) %in% row,]
+expr.C.women <- expr.N.men[!rownames(expr.C.women) %in% row,]
 
 # Differentially Expressed Genes (DEGs) -----------------------------------
+
+# Analysis for men data
+
+# Fold change computations
+fc.men <- log2(rowMeans(expr.C.men) / rowMeans(expr.N.men) ) 
+names(fc.men) <- rownames(expr.C.men)
+
+row <- "ENSG00000197976.12_PAR_Y"
+fc.men <- fc.men[!names(fc.men) %in% row]
+
+# t-statistics p-value computation and multiple comparisons adjustments
+pval.fc.men <- sapply(1:nrow(expr.C.men), function(i) (t.test(expr.C.men[i,], 
+                                                              expr.N.men[i,]))$p.value)
+pval.fc.men.fdr <- p.adjust(pval.fc.men, method="fdr")
+names(pval.fc.men.fdr) <- rownames(expr.C.men)
+pval.fc.men.fdr <- pval.fc.men.fdr[!names(pval.fc.men.fdr) %in% row]
+
+expr.table.men <- data.frame(cbind(fc.men, pval.fc.men.fdr))
+expr.table.men[,1] <- round(expr.table.men[,1],2)
+
+deg.genes.men <- rownames(expr.table.men[abs(expr.table.men$fc) >= 1.2 & expr.table.men$pval.fc.men.fdr <= 0.05,]) 
+deg.genes.men
+ 
+head(expr.table.men[deg.genes.men,], 10)
+
+# Volcano plot
+
+expr.table.men$diffexpressed <- "NO";
+expr.table.men$diffexpressed[expr.table.men$fc >= 1.2 & expr.table.men$pval.fc.men.fdr <= 0.05] <- "UP"
+expr.table.men$diffexpressed[expr.table.men$fc <= -1.2 & expr.table.men$pval.fc.men.fdr <= 0.05] <- "DOWN"
+head(expr.table.men)
+
+expr.table.men$diffexpressed <- as.factor(expr.table.men$diffexpressed)
+summary(expr.table.men$diffexpressed)
+
+p1 <- ggplot(data=expr.table.men, aes(x=fc.men, 
+                                y=-log10(pval.fc.men.fdr), 
+                                col=diffexpressed))+  
+  geom_point(size=1.1) +
+  theme_bw() +
+  scale_color_manual(values = c("darkred", "grey", "darkblue")) +
+  xlab("fold change (log2)") + 
+  ylab("-log10 adjusted p-value") +
+  geom_hline(yintercept=-log10(0.05), col="black", lty='dotted')+
+  geom_vline(xintercept=1.2,col="black", lty='dotted')+
+  geom_vline(xintercept=-1.2, col="black", lty='dotted') + 
+  labs(color = 'DEGs status ')
+
+p1
+cat(deg.genes.men, sep = "\n")
+
+# Analysis for women data
+
+# Fold change computations
+fc.women <- log2(rowMeans(expr.C.women) / rowMeans(expr.N.women) ) 
+names(fc.women) <- rownames(expr.C.women)
+head(fc.women)
+
+row <- "ENSG00000197976.12_PAR_Y"
+fc.women <- fc.women[!names(fc.women) %in% row]
+
+# t-statistics p-value computation and multiple comparision adjustments
+pval.fc.women <- sapply(1:nrow(expr.C.women), function(i) (t.test(expr.C.women[i,], 
+                                                                  expr.N.women[i,]))$p.value)
+pval.fc.women.fdr <- p.adjust(pval.fc.women, method="fdr")
+names(pval.fc.women.fdr) <- rownames(expr.C.women)
+pval.fc.women.fdr <- pval.fc.women.fdr[!names(pval.fc.women.fdr) %in% row]
+
+expr.table.women <- data.frame(cbind(fc.women, pval.fc.women.fdr))
+expr.table.women[,1] <- round(expr.table.women[,1],2)
+
+deg.genes.women <- rownames(expr.table.women[abs(expr.table.women$fc) >= 1.2 & expr.table.women$pval.fc.women.fdr <= 0.05,]) 
+deg.genes.women
+
+head(expr.table.men[deg.genes.women,], 10)
+
+# Volcano plot
+
+expr.table.women$diffexpressed <- "NO";
+expr.table.women$diffexpressed[expr.table.women$fc >= 1.2 & expr.table.women$pval.fc.women.fdr <= 0.05] <- "UP"
+expr.table.women$diffexpressed[expr.table.women$fc <= -1.2 & expr.table.women$pval.fc.women.fdr <= 0.05] <- "DOWN"
+head(expr.table.women)
+
+expr.table.women$diffexpressed <- as.factor(expr.table.women$diffexpressed)
+summary(expr.table.women$diffexpressed)
+
+p2 <- ggplot(data=expr.table.women, aes(x=fc.women, 
+                                  y=-log10(pval.fc.women.fdr), 
+                                  col=diffexpressed))+  
+  geom_point(size=1.1) +
+  theme_bw() +
+  scale_color_manual(values = c("darkred", "grey", "darkblue")) +
+  xlab("fold change (log2)") + 
+  ylab("-log10 adjusted p-value") +
+  geom_hline(yintercept=-log10(0.05), col="black", lty='dotted')+
+  geom_vline(xintercept=1.2,col="black", lty='dotted')+
+  geom_vline(xintercept=-1.2, col="black", lty='dotted') + 
+  labs(color = 'DEGs status ')
+
+p2
+cat(deg.genes.women, sep = "\n")
+
+# For export 
+
+legend <- get_legend(p1)
+
+p1 <- p1 + theme(legend.position = "none")
+p2 <- p2 + theme(legend.position = "none")
+
+grid.arrange(
+  arrangeGrob(p1, p2, ncol = 2),
+  legend,
+  ncol = 2,
+  widths = c(4, 1)
+)
+
+overlapping.DEGs <- intersect(deg.genes.men, deg.genes.women)
 
 
