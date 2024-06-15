@@ -284,6 +284,151 @@ overlapping.DEGs.info <- genes.info[overlapping.DEGs,]
 write.csv2(overlapping.DEGs.info, "overlappingDEGS.csv")
 
 
+# Differential co-expression network  -------------------------------------
+
+
+Z <- 3 # we choose to set a higher value of Z statistic due to a very dense behavior of the graph connectivity with lower values
+
+# Before computing correlations, we log transform the data using log2(x+1)
+#We will treat the two conditions separately men/woman
+
+#filtr.expr.c.men <- log2(expr.C.men+1)
+#filtr.expr.n.men <- log2(expr.N.men+1) 
+#filtr.expr.c.women <- log2(expr.C.women+1)
+#filtr.expr.n.women <- log2(expr.N.women+1) 
+
+
+# Create the nets
+# Correlation matrix for the cancer network
+
+# Cancer wrt sex
+cor.mat.C.men <- corr.test(t(expr.C.men), use = "pairwise", 
+                                method = "pearson", adjust="fdr", ci=FALSE)
+cor.mat.C.women <- corr.test(t(expr.C.women), use = "pairwise", 
+                                  method = "pearson", adjust="fdr", ci=FALSE)
+
+# Normal wrt sex
+cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise", 
+                           method = "pearson", adjust="fdr", ci=FALSE)
+cor.mat.N.women <- corr.test(t(expr.N.women), use = "pairwise", 
+                             method = "pearson", adjust="fdr", ci=FALSE)
+?log
+
+# Fisher transform function
+
+Fischer.Z <- function(M) {
+  return(0.5 * log((1+M)/(1-M)))
+}
+
+# Apply Fisher transform function to correlation matrices
+cor.mat.C.men <- Fischer.Z(cor.mat.C.men$r)
+cor.mat.C.women <- Fischer.Z(cor.mat.C.women$r)
+cor.mat.N.men <- Fischer.Z(cor.mat.N.men$r)
+cor.mat.N.women <- Fischer.Z(cor.mat.N.women$r)
+
+diag(cor.mat.C.men) <- 0
+diag(cor.mat.C.women) <- 0
+diag(cor.mat.N.men) <- 0
+diag(cor.mat.N.women) <- 0
+
+# Compute Z-scores
+
+# Men graph
+# Sample size of men between condition C and condition N is the same by design
+n.men <- dim(expr.C.men)[2]
+Z.men <- (cor.mat.C.men - cor.mat.N.men)/(sqrt(2/(n.men - 3)))
+
+adj.mat.men <- 1 * (abs(Z.men) > Z)
+
+# Women graph
+# Sample size of men between condition C and condition N is the same by design
+n.women <- dim(expr.C.women)[2]
+Z.women <- (cor.mat.C.women - cor.mat.N.women)/(sqrt(2/(n.women - 3)))
+
+adj.mat.women <- 1 * (abs(Z.women) > Z)
+
+# Build the differential expression networks
+
+DEnet.men <- as.network(adj.mat.men, directed = FALSE)
+DEnet.women <- as.network(adj.mat.women, directed=FALSE)
+
+# Men analysis
+network.size(DEnet.men) #649
+network.edgecount(DEnet.men) # 6504
+network.density(DEnet.men)
+
+d.men <- sna::degree(DEnet.men, gmode = 'graph')
+names(d.men) <- network.vertex.names(DEnet.men)
+
+# Print the histogram of the degree together with a line for the 95% quantile
+q.men <- quantile(d.men[d.men>0],0.95)
+hist(d.men,col = "lightblue", main = "Degree distribution - Male population")
+abline(v=q.men, col="red", lty = 'dotted')
+
+hubs.men <- d.men[d.men>=q.men]
+length(hubs.men) # 33
+
+# Power law: Another way to check if a network is scale free is to verify if it
+# follows the power law. i.e. there should be a link between the fraction of 
+# nodes f(k) with degree k and k itself f(k) ⁓ k^(-γ) (usually 2< γ <3)
+d.men.table <- table(d.men)
+
+# Convert the table to a data frame
+d.men.fd <- data.frame(degree = as.numeric(names(d.men.table)),
+                       count = as.numeric(d.men.table)/length(hubs.men))
+
+plot(log(d.men.fd$degree), log(d.men.fd$count), 
+     xlab = "Degree", ylab = "Degree Count", 
+     main = "Degree Distribution - Male DEnetwork", 
+     pch = 16, col = "lightblue")
+
+x.men <- log(d.men.fd$degree)
+y.men <- log(d.men.fd$count)
+
+model.lm.men <- glm.fit(x.men[2:length(x.men)], y.men[2:length(y.men)])
+model.lm.men$coefficients
+abline(a = 0, b = model.lm.men$coefficient, col = 'red', lty='dotted')
+
+# Women analysis
+network.size(DEnet.women) #649
+network.edgecount(DEnet.women) # 5562
+network.density(DEnet.women) #0.0265
+
+d.women <- sna::degree(DEnet.women, gmode = 'graph')
+names(d.women) <- network.vertex.names(DEnet.women)
+
+# Print the histogram of the degree together with a line for the 95% quantile
+q.women <- quantile(d.women[d.women>0],0.95)
+hist(d.women,col = "lightblue", main = "Degree distribution - Male population")
+abline(v=q.women, col="red", lty = 'dotted')
+
+hubs.women <- d.women[d.women>=q.women]
+length(hubs.women) # 32
+
+# Power law: Another way to check if a network is scale free is to verify if it
+# follows the power law. i.e. there should be a link between the fraction of 
+# nodes f(k) with degree k and k itself f(k) ⁓ k^(-γ) (usually 2< γ <3)
+d.women.table <- table(d.women)
+
+# Convert the table to a data frame
+d.women.fd <- data.frame(degree = as.numeric(names(d.women.table)),
+                       count = as.numeric(d.women.table)/length(hubs.women))
+
+plot(log(d.women.fd$degree), log(d.women.fd$count), 
+     xlab = "Degree", ylab = "Degree Count", 
+     main = "Degree Distribution - Male DEnetwork", 
+     pch = 16, col = "lightblue")
+
+x.women <- log(d.women.fd$degree)
+y.women <- log(d.women.fd$count)
+
+model.lm.women <- glm.fit(x.women[2:length(x.women)], y.women[2:length(y.women)])
+model.lm.women$coefficients
+abline(a = 0, b = model.lm.women$coefficient, col = 'red', lty='dotted')
+
+# Overlapping hubs
+overlapping.hubs <- intersect(names(hubs.men), names(hubs.women))
+
 # Patient Similarity Network ----------------------------------------------
 
 # Rebuild back a full dataframe with men and women 
