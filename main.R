@@ -429,6 +429,72 @@ abline(a = 0, b = model.lm.women$coefficient, col = 'red', lty='dotted')
 # Overlapping hubs
 overlapping.hubs <- intersect(names(hubs.men), names(hubs.women))
 
+#_______________________________________________________________________________
+
+# Female vs male : only for cancer condition DEnetwork
+#compute corr matrices
+cor.mat.C.men <- corr.test(t(expr.C.men), use = "pairwise", 
+                           method = "pearson", adjust="fdr", ci=FALSE)
+cor.mat.C.women <- corr.test(t(expr.C.women), use = "pairwise", 
+                             method = "pearson", adjust="fdr", ci=FALSE)
+
+cor.mat.C.men <- Fischer.Z(cor.mat.C.men$r)
+cor.mat.C.women <- Fischer.Z(cor.mat.C.women$r)
+
+# Compute Z-scores
+
+# Sample size of men and women onto Cancer tissue condition
+n.C_men <- dim(expr.C.men)[2]
+n.C_women <- dim(expr.C.women)[2]
+Z.C <- (cor.mat.C.men - cor.mat.C.women)/(sqrt(1/(n.C_men - 3)) + (sqrt(1/(n.C_women - 3)) ) )
+
+adj.mat.C <- 1 * (abs(Z.C) > Z)
+table(adj.mat.C)
+
+
+DEnet.C <- as.network(adj.mat.C, directed=FALSE)
+
+# Men analysis
+network.size(DEnet.C) #649
+network.edgecount(DEnet.C) # 257
+network.density(DEnet.C) #0.00123
+
+d.C <- sna::degree(DEnet.C, gmode = 'graph')
+names(d.C) <- network.vertex.names(DEnet.C)
+
+# Print the histogram of the degree together with a line for the 95% quantile
+q.C <- quantile(d.C[d.C>0],0.95)
+hist(d.C,col = "lightblue", main = "Degree distribution - Male population")
+abline(v=q.C, col="red", lty = 'dotted')
+
+hubs.C <- d.C[d.C>=q.C]
+length(hubs.C) # 9
+
+#let's check differences among overlapping hubs compute before and those computed above 
+intersect(names(hubs.C), names(overlapping.hubs)) #None :(
+
+
+d.C.table <- table(d.C)
+
+# Convert the table to a data frame
+d.C.fd <- data.frame(degree = as.numeric(names(d.C.table)),
+                       count = as.numeric(d.C.table)/length(hubs.C))
+
+plot(log(d.C.fd$degree), log(d.C.fd$count), 
+     xlab = "Degree", ylab = "Degree Count", 
+     main = "Degree Distribution - Male DEnetwork", 
+     pch = 16, col = "lightblue")
+
+x.C <- log(d.C.fd$degree)
+y.C <- log(d.C.fd$count)
+
+model.lm.C <- glm.fit(x.C[2:length(x.C)], y.C[2:length(y.C)])
+model.lm.C$coefficients
+abline(a = 2, b = model.lm.C$coefficient, col = 'red', lty='dotted')
+
+
+#-------------------------------------------------------------------------------
+
 # Patient Similarity Network ----------------------------------------------
 
 # Rebuild back a full dataframe with men and women 
