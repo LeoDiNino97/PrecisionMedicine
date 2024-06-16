@@ -60,107 +60,6 @@ rm(genes.info.n)
 rm(genes.info.c)
 
 
-# Data normalization with DeSeq2 (full-batch) -----------------------------------
-
-all(rownames(rna.expr.data.C) == rownames(rna.expr.data.N))
-full.data <- cbind(rna.expr.data.C, rna.expr.data.N)
-
-dim(full.data)
-dim(rna.expr.data.C)
-dim(rna.expr.data.N)
-
-full.data <- data.frame(full.data)
-
-# Defining meta data for the normalization procedure
-metad <- rep("normal", dim(full.data)[2])
-metad[1:dim(rna.expr.data.C)[2]] <- "cancer"
-metad <- data.frame(metad)
-
-rownames(metad) <- colnames(full.data)
-colnames(metad)[1] <- "condition"
-
-metad[,1] <- as.factor(metad[,1])
-full.data <- cbind(rownames(full.data), full.data)
-
-dds <- DESeqDataSetFromMatrix(countData=full.data, 
-                              colData=metad, 
-                              design= ~ condition,
-                              tidy=TRUE)
-
-# Perform normalization
-dds <- estimateSizeFactors(dds)
-normalized_counts <- counts(dds, 
-                            normalized=TRUE)
-
-sum(rowSums(normalized_counts == 0) == dim(full.data)[2]) # No null rows :)
-
-# Split back the table
-rna.expr.data.C <- as.data.frame(normalized_counts[, 1:dim(rna.expr.data.C)[2]])
-rna.expr.data.N <- as.data.frame(normalized_counts[, (dim(rna.expr.data.C)[2]+1):dim(normalized_counts)[2]])
-
-
-# Data engineering and cleaning -----------------------------------------------------------
-
-# Let's read the patients which we are interested into
-patients <- read.table("annex_1.txt", stringsAsFactors=FALSE)[,1]
-
-# Looking for duplicates
-dim(rna.expr.data.N)
-length(unique(substr(colnames(rna.expr.data.N), 1,12))) # No duplicates :)
-dim(rna.expr.data.C)
-length(unique(substr(colnames(rna.expr.data.C), 1,12))) # No duplicates :)
-
-
-# Renaming patients to match the given format for patient_id
-colnames(rna.expr.data.C) <- gsub("\\.", "-", substr(colnames(rna.expr.data.C), 1,12))
-unique(colnames(rna.expr.data.C))
-
-colnames(rna.expr.data.N) <- gsub("\\.", "-", substr(colnames(rna.expr.data.N), 1,12))
-unique(colnames(rna.expr.data.N))
-
-# Let's match the two datasets with the given patients_id list
-rna.expr.data.C <- rna.expr.data.C[,match(patients, colnames(rna.expr.data.C))] 
-rna.expr.data.N <- rna.expr.data.N[,match(patients, colnames(rna.expr.data.N))]
-
-# Patients id of patients being in both tables
-length(intersect(colnames(rna.expr.data.C), colnames(rna.expr.data.N))) == 49
-
-# All given patients have both cancer and normal tissues data
-
-# Let's retrieve gender based identifiers
-women <- intersect(patients,
-                   clinical.query[clinical.query$gender == "female",]$submitter_id)
-
-men <- intersect(patients,
-                 clinical.query[clinical.query$gender == "male",]$submitter_id)
-
-expr.C.women <- rna.expr.data.C[,women]
-expr.C.men <- rna.expr.data.C[,men]
-
-expr.N.women <- rna.expr.data.N[,women]
-expr.N.men <- rna.expr.data.N[,men]
-
-# Select the genes of interest
-
-genes <- read.table("gene-list2.txt", stringsAsFactors=FALSE)[,1]
-
-genes.id <- genes.info[genes.info$gene_name %in% genes, "gene_id"]
-
-genes.c <- intersect(rownames(rna.expr.data.C), 
-                     genes.id) 
-
-genes.n <- intersect(rownames(rna.expr.data.N),  
-                     genes.id)
-
-# Filter out our the previously retrieved tables 
-
-expr.C.men <- expr.C.men[genes.c,]
-expr.C.women <- expr.C.women[genes.c,]
-
-expr.N.men <- expr.N.men[genes.n,]
-expr.N.women <- expr.N.women[genes.n,]
-
-
 # Data normalization within populations + filtering with genes of interest -----
 
 all(rownames(rna.expr.data.C) == rownames(rna.expr.data.N))
@@ -736,3 +635,60 @@ prop.table(table(community.2$race))
 
 prop.table(table(community.1$days_to_death))
 prop.table(table(community.2$days_to_death))
+
+
+# Optional task  ----------------------------------------------------------
+
+cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise", 
+                           method = "pearson", adjust="fdr", ci=FALSE)
+cor.mat.N.women <- corr.test(t(expr.N.women), use = "pairwise", 
+                             method = "pearson", adjust="fdr", ci=FALSE)
+
+cor.mat.N.men <- Fischer.Z(cor.mat.N.men$r)
+cor.mat.N.women <- Fischer.Z(cor.mat.N.women$r)
+
+# Compute Z-scores
+
+# Sample size of men and women onto Cancer tissue condition
+n.N.men <- dim(expr.N.men)[2]
+n.N.women <- dim(expr.N.women)[2]
+Z.N <- (cor.mat.N.men - cor.mat.N.women)/(sqrt(1/(n.N.men - 3)) + (sqrt(1/(n.N.women - 3)) ) )
+
+adj.mat.N <- 1 * (abs(Z.N) > 2.5) #Try to change Z values and see how change the connectivity 
+table(adj.mat.N)
+
+
+DEnet.N <- as.network(adj.mat.N, directed=FALSE)
+
+# Men analysis
+network.size(DEnet.N) #649
+network.edgecount(DEnet.N) # 41
+network.density(DEnet.N) #0.000195
+
+d.N <- sna::degree(DEnet.N, gmode = 'graph')
+names(d.N) <- network.vertex.names(DEnet.N)
+
+# Print the histogram of the degree together with a line for the 95% quantile
+q.N <- quantile(d.N[d.N>0],0.95)
+hist(d.N,col = "lightblue", main = "Degree distribution - Cancer population")
+abline(v=q.N, col="red", lty = 'dotted')
+
+hubs.N <- d.N[d.N>=q.N]
+length(hubs.N) # 2
+
+d.N.table <- table(d.N)
+
+# Convert the table to a data frame
+d.N.fd <- data.frame(degree = as.numeric(names(d.N.table)),
+                     count = as.numeric(d.N.table)/length(hubs.N))
+
+
+x.N <- log(d.N.fd$degree)
+y.N <- log(d.N.fd$count)
+x.N <- cbind(1, x.N[2:length(x.N)])
+model.lm.N <- glm.fit(x.N, y.N[2:length(y.N)])
+beta.n <- model.lm.N$coefficients
+plot(x.N[,2], y.N[2:length(y.N)], xlab = "log(degree)", ylab = "log(count)", main = "Degree distribution Cancer pop. ",pch = 16, col = "lightblue")
+
+# Add the fitted line
+abline(a = beta.n[1], b = beta.n[2], col = 'red', lty = 'dotted')
