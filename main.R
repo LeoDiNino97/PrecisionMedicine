@@ -312,7 +312,6 @@ cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise",
                            method = "pearson", adjust="fdr", ci=FALSE)
 cor.mat.N.women <- corr.test(t(expr.N.women), use = "pairwise", 
                              method = "pearson", adjust="fdr", ci=FALSE)
-?log
 
 # Fisher transform function
 
@@ -336,14 +335,14 @@ diag(cor.mat.N.women) <- 0
 # Men graph
 # Sample size of men between condition C and condition N is the same by design
 n.men <- dim(expr.C.men)[2]
-Z.men <- (cor.mat.C.men - cor.mat.N.men)/(sqrt(2/(n.men - 3)))
+Z.men <- (cor.mat.C.men - cor.mat.N.men)/(2*sqrt(1/(n.men - 3)))
 
 adj.mat.men <- 1 * (abs(Z.men) > Z)
 
 # Women graph
 # Sample size of men between condition C and condition N is the same by design
 n.women <- dim(expr.C.women)[2]
-Z.women <- (cor.mat.C.women - cor.mat.N.women)/(sqrt(2/(n.women - 3)))
+Z.women <- (cor.mat.C.women - cor.mat.N.women)/(2*sqrt(1/(n.women - 3)))
 
 adj.mat.women <- 1 * (abs(Z.women) > Z)
 
@@ -379,15 +378,18 @@ d.men.fd <- data.frame(degree = as.numeric(names(d.men.table)),
 
 plot(log(d.men.fd$degree), log(d.men.fd$count), 
      xlab = "Degree", ylab = "Degree Count", 
-     main = "Degree Distribution - Male DEnetwork", 
      pch = 16, col = "lightblue")
 
 x.men <- log(d.men.fd$degree)
 y.men <- log(d.men.fd$count)
 
-model.lm.men <- glm.fit(x.men[2:length(x.men)], y.men[2:length(y.men)])
+model.lm.men <- glm(y.men[2:length(y.men)] ~ x.men[2:length(x.men)])
 model.lm.men$coefficients
-abline(a = 0, b = model.lm.men$coefficient, col = 'red', lty='dotted')
+
+abline(a = as.numeric(model.lm.men$coefficients[1]), 
+       b = as.numeric(model.lm.men$coefficients[2]), 
+       col = 'red', 
+       lty='dotted')
 
 # Women analysis
 network.size(DEnet.women) #649
@@ -416,15 +418,18 @@ d.women.fd <- data.frame(degree = as.numeric(names(d.women.table)),
 
 plot(log(d.women.fd$degree), log(d.women.fd$count), 
      xlab = "Degree", ylab = "Degree Count", 
-     main = "Degree Distribution - Male DEnetwork", 
      pch = 16, col = "lightblue")
 
 x.women <- log(d.women.fd$degree)
 y.women <- log(d.women.fd$count)
 
-model.lm.women <- glm.fit(x.women[2:length(x.women)], y.women[2:length(y.women)])
+model.lm.women <- glm(y.women[2:length(y.women)] ~ x.women[2:length(x.women)])
 model.lm.women$coefficients
-abline(a = 0, b = model.lm.women$coefficient, col = 'red', lty='dotted')
+
+abline(a = as.numeric(model.lm.women$coefficients[1]), 
+       b = as.numeric(model.lm.women$coefficients[2]), 
+       col = 'red', 
+       lty='dotted')
 
 # Overlapping hubs
 overlapping.hubs <- intersect(names(hubs.men), names(hubs.women))
@@ -488,9 +493,10 @@ plot(log(d.C.fd$degree), log(d.C.fd$count),
 x.C <- log(d.C.fd$degree)
 y.C <- log(d.C.fd$count)
 
-model.lm.C <- glm.fit(x.C[2:length(x.C)], y.C[2:length(y.C)])
+model.lm.C <- glm(y.C[2:length(y.C)] ~ x.C[2:length(x.C)])
 model.lm.C$coefficients
-abline(a = 2, b = model.lm.C$coefficient, col = 'red', lty='dotted')
+abline(a = as.numeric(model.lm.C$coefficients[1]), 
+       b = as.numeric(model.lm.C$coefficients[2]), col = 'red', lty='dotted')
 
 
 #-------------------------------------------------------------------------------
