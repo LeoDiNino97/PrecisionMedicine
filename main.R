@@ -60,7 +60,7 @@ rm(genes.info.n)
 rm(genes.info.c)
 
 
-# Data normalization with DeSeq2 ------------------------------------------
+# Data normalization with DeSeq2 (full-batch) -----------------------------------
 
 all(rownames(rna.expr.data.C) == rownames(rna.expr.data.N))
 full.data <- cbind(rna.expr.data.C, rna.expr.data.N)
@@ -160,6 +160,142 @@ expr.C.women <- expr.C.women[genes.c,]
 expr.N.men <- expr.N.men[genes.n,]
 expr.N.women <- expr.N.women[genes.n,]
 
+
+# Data normalization within populations + filtering with genes of interest -----
+
+all(rownames(rna.expr.data.C) == rownames(rna.expr.data.N))
+full.data <- cbind(rna.expr.data.C, rna.expr.data.N)
+
+dim(full.data)
+dim(rna.expr.data.C)
+dim(rna.expr.data.N)
+
+full.data <- data.frame(full.data)
+
+# Let's read the patients which we are interested into
+patients <- read.table("annex_1.txt", stringsAsFactors=FALSE)[,1]
+
+# Looking for duplicates
+dim(rna.expr.data.N)
+length(unique(substr(colnames(rna.expr.data.N), 1,12))) # No duplicates :)
+dim(rna.expr.data.C)
+length(unique(substr(colnames(rna.expr.data.C), 1,12))) # No duplicates :)
+
+# patients.sub <- gsub("-", "\\.", patients)
+# Renaming patients to match the given format for patient_id
+colnames(rna.expr.data.C) <- gsub("\\.", "-", substr(colnames(rna.expr.data.C), 1,12))
+unique(colnames(rna.expr.data.C))
+
+colnames(rna.expr.data.N) <- gsub("\\.", "-", substr(colnames(rna.expr.data.N), 1,12))
+unique(colnames(rna.expr.data.N))
+
+# Let's match the two datasets with the given patients_id list
+rna.expr.data.C <- rna.expr.data.C[,match(patients, substr(colnames(rna.expr.data.C), 1, 12))] 
+rna.expr.data.N <- rna.expr.data.N[,match(patients, substr(colnames(rna.expr.data.N), 1, 12))]
+
+# Patients id of patients being in both tables
+length(intersect(
+  substr(colnames(rna.expr.data.C),1,12), 
+  substr(colnames(rna.expr.data.N),1,12))) == 49
+
+# All given patients have both cancer and normal tissues data
+
+# Let's retrieve gender based identifiers
+women <- intersect(patients,
+                   clinical.query[clinical.query$gender == "female",]$submitter_id)
+
+men <- intersect(patients,
+                 clinical.query[clinical.query$gender == "male",]$submitter_id)
+
+expr.C.women <- rna.expr.data.C[,women]
+expr.C.men <- rna.expr.data.C[,men]
+
+expr.N.women <- rna.expr.data.N[,women]
+expr.N.men <- rna.expr.data.N[,men]
+
+
+# Defining meta data for the normalization procedure
+
+# Normalizing men data
+full.men <- cbind(expr.C.men, expr.N.men)
+colnames(full.men) <- gsub("-", "\\.", colnames(full.men))
+colnames(full.men)[28:54] <- paste(colnames(full.men)[28:54], ".1", sep = "")
+
+metad.men <- rep("normal", dim(full.men)[2])
+metad.men[1:dim(expr.C.men)[2]] <- "cancer"
+metad.men <- data.frame(metad.men)
+
+rownames(metad.men) <- colnames(full.men)
+colnames(metad.men)[1] <- "condition"
+
+metad.men[,1] <- as.factor(metad.men[,1])
+#full.men <- cbind(rownames(full.men), full.men)
+
+dds.men <- DESeqDataSetFromMatrix(countData=full.men, 
+                                  colData=metad.men, 
+                                  design= ~ condition,
+                                  tidy=FALSE)
+
+# Perform normalization
+dds.men <- estimateSizeFactors(dds.men)
+normalized.mens <- counts(dds.men, 
+                            normalized=TRUE)
+
+sum(rowSums(normalized.mens == 0) == dim(full.men)[2]) # No null rows :)
+
+# Split back the table
+expr.C.men <- as.data.frame(normalized.men[, 1:dim(expr.C.men)[2]])
+expr.N.men <- as.data.frame(normalized.men[, (dim(expr.C.men)[2]+1):dim(normalized.men)[2]])
+
+# Normalizing women data
+full.women <- cbind(expr.C.women, expr.N.women)
+colnames(full.women) <- gsub("-", "\\.", colnames(full.women))
+colnames(full.women)[23:44] <- paste(colnames(full.women)[23:44], ".1", sep = "")
+
+metad.women <- rep("normal", dim(full.women)[2])
+metad.women[1:dim(expr.C.women)[2]] <- "cancer"
+metad.women <- data.frame(metad.women)
+
+rownames(metad.women) <- colnames(full.women)
+colnames(metad.women)[1] <- "condition"
+
+metad.women[,1] <- as.factor(metad.women[,1])
+#full.men <- cbind(rownames(full.men), full.men)
+
+dds.women <- DESeqDataSetFromMatrix(countData=full.women, 
+                                  colData=metad.women, 
+                                  design= ~ condition,
+                                  tidy=FALSE)
+
+# Perform normalization
+dds.women <- estimateSizeFactors(dds.women)
+normalized.women <- counts(dds.women, 
+                          normalized=TRUE)
+
+
+# Split back the table
+expr.C.women <- as.data.frame(normalized.women[, 1:dim(expr.C.women)[2]])
+expr.N.women <- as.data.frame(normalized.women[, (dim(expr.C.women)[2]+1):dim(normalized.women)[2]])
+
+# Select the genes of interest
+
+genes <- read.table("gene-list2.txt", stringsAsFactors=FALSE)[,1]
+
+genes.id <- genes.info[genes.info$gene_name %in% genes, "gene_id"]
+
+genes.c <- intersect(rownames(rna.expr.data.C), 
+                     genes.id) 
+
+genes.n <- intersect(rownames(rna.expr.data.N),  
+                     genes.id)
+
+# Filter out our the previously retrieved tables 
+
+expr.C.men <- expr.C.men[genes.c,]
+expr.C.women <- expr.C.women[genes.c,]
+
+expr.N.men <- expr.N.men[genes.n,]
+expr.N.women <- expr.N.women[genes.n,]
 
 # Differentially Expressed Genes (DEGs) -----------------------------------
 
@@ -312,6 +448,7 @@ cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise",
                            method = "pearson", adjust="fdr", ci=FALSE)
 cor.mat.N.women <- corr.test(t(expr.N.women), use = "pairwise", 
                              method = "pearson", adjust="fdr", ci=FALSE)
+?log
 
 # Fisher transform function
 
@@ -472,7 +609,7 @@ q.C <- quantile(d.C[d.C>0],0.95)
 hist(d.C,col = "lightblue", main = "Degree distribution - Male population")
 abline(v=q.C, col="red", lty = 'dotted')
 
-hubs.C <- d.C[d.C>=q.C]
+hubs.C <- names(d.C)[d.C>=q.C]
 length(hubs.C) # 9
 
 #let's check differences among overlapping hubs compute before and those computed above 
@@ -498,6 +635,7 @@ model.lm.C$coefficients
 abline(a = as.numeric(model.lm.C$coefficients[1]), 
        b = as.numeric(model.lm.C$coefficients[2]), col = 'red', lty='dotted')
 
+intersect(overlapping.hubs, hubs.C)
 
 #-------------------------------------------------------------------------------
 
