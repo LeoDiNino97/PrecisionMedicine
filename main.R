@@ -8,7 +8,7 @@ install.packages("GGally")
 required_packages <- c("BiocGenerics", "DESeq2", "psych", "NetworkToolbox", 
                        "ggplot2", "GGally", "sna", "network", "TCGAbiolinks", 
                        "igraph", "SummarizedExperiment", "DT", "latex2exp", "gridExtra", 
-                       "cowplot", "poweRlaw")
+                       "cowplot", "poweRlaw","intergraph")
 
 lapply(required_packages, library, character.only = TRUE)
 
@@ -506,12 +506,11 @@ adj.mat.C <- 1 * (abs(Z.C) > Z)
 table(adj.mat.C)
 
 
-DEnet.C <- as.network(adj.mat.C, directed=FALSE)
+DEnet.C <- as.network(component.largest(as.network(adj.mat.C, directed=FALSE), result="graph"))
 
-# Men analysis
-network.size(DEnet.C) #649
-network.edgecount(DEnet.C) # 257
-network.density(DEnet.C) #0.00123
+network.size(DEnet.C) 
+network.edgecount(DEnet.C) 
+network.density(DEnet.C) 
 
 d.C <- sna::degree(DEnet.C, gmode = 'graph')
 names(d.C) <- network.vertex.names(DEnet.C)
@@ -521,7 +520,7 @@ q.C <- quantile(d.C[d.C>0],0.95)
 hist(d.C,col = "lightgreen", breaks=80, main = "")
 abline(v=q.C, col="red", lty = 'dotted')
 
-hubs.C <- names(d.C)[d.C>=q.C]
+hubs.C <- d.C[d.C>=q.C]
 length(hubs.C) # 9
 
 #let's check differences among overlapping hubs compute before and those computed above 
@@ -697,7 +696,7 @@ hist(d.N,col = "gold", breaks=50, main = "")
 abline(v=q.N, col="red", lty = 'dotted')
 
 hubs.N <- d.N[d.N>=q.N]
-length(hubs.N) # 2
+length(hubs.N) 
 
 d.N.table <- table(d.N)
 
@@ -773,3 +772,65 @@ hubs.neg <- names(d.neg)[d.neg>=q_neg]
 length(hubs.neg) 
 
 intersect(hubs.pos,hubs.neg)
+
+
+# Subnetwork induced by hubs visualization --------------------------------
+
+DEnet.men <- as.network(adj.mat.men, directed = FALSE)
+DEnet.women <- as.network(adj.mat.women, directed=FALSE)
+DEnet.C <- as.network(adj.mat.C, directed = FALSE)
+DEnet.N <- as.network(adj.mat.N, directed=FALSE)
+
+clean_matrix <- function(mat) {
+  mat[is.na(mat) | is.nan(mat) | is.infinite(mat)] <- 0
+  return(mat)
+}
+
+# Clean the adjacency matrices
+adj.mat.men <- clean_matrix(adj.mat.men)
+adj.mat.women <- clean_matrix(adj.mat.women)
+adj.mat.C <- clean_matrix(adj.mat.C)
+adj.mat.N <- clean_matrix(adj.mat.N)
+
+g.men <- graph_from_adjacency_matrix(adj.mat.men, mode = "undirected")
+g.women <- graph_from_adjacency_matrix(adj.mat.women, mode = "undirected")
+g.N <- graph_from_adjacency_matrix(adj.mat.C, mode = "undirected")
+g.C <- graph_from_adjacency_matrix(adj.mat.N, mode = "undirected")
+
+neighbors.men <- unique(unlist(sapply(as.numeric(hubs.men), neighbors, graph = g.men)))
+neighbors.women <- unique(unlist(sapply(as.numeric(hubs.women), neighbors, graph = g.women)))
+neighbors.C <- unique(unlist(sapply(as.numeric(hubs.C), neighbors, graph = g.C)))
+neighbors.N <- unique(unlist(sapply(as.numeric(hubs.N), neighbors, graph = g.N)))
+
+neighbors.men <- unique(c(neighbors.men, as.numeric(hubs.men)))
+neighbors.women <- unique(c(neighbors.women, as.numeric(hubs.women)))
+neighbors.C <- unique(c(neighbors.C, as.numeric(hubs.C)))
+neighbors.N <- unique(c(neighbors.N, as.numeric(hubs.N)))
+
+
+subnet.plot <- function(g, suppnet, nodes, color) {
+  # Create the edge data frame
+  edge_df <- as_edgelist(g, names = TRUE)
+  
+  # Define colors and sizes
+  node_colors <- ifelse(network.vertex.names(suppnet) %in% network.vertex.names(suppnet)[nodes], color, 'grey90')
+  node_sizes <- ifelse(network.vertex.names(suppnet) %in% network.vertex.names(suppnet)[nodes], 1, 1)
+  edge_colors <- ifelse(edge_df[,1] %in% network.vertex.names(suppnet)[nodes] & 
+                        edge_df[,2] %in% network.vertex.names(suppnet)[nodes], color, "grey90")
+  edge_sizes <- ifelse(edge_df[,1] %in% network.vertex.names(suppnet)[nodes] & 
+                       edge_df[,2] %in% network.vertex.names(suppnet)[nodes], 1, 0.1)
+  
+  # Plot the network
+  ggnet2(
+    g,
+    node.size = node_sizes,
+    node.color = node_colors,
+    edge.color = edge_colors,
+    edge.size = edge_sizes,
+  ) + 
+    coord_equal() 
+}
+
+
+subnet.plot(g.men, DEnet.men, neighbors.men, 'darkblue')
+
