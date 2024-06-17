@@ -1,13 +1,14 @@
-# 0 - Load packages --------------
+# Environment setting --------------
 
 BiocManager::install("BiocGenerics")
 BiocManager::install("TCGAbiolinks")
 BiocManager::install("DESeq2")
 install.packages("GGally")
 
-required_packages <- c("BiocGenerics", "DESeq2", "psych", "NetworkToolbox", "ggplot2",
-                       "GGally", "sna", "network", "TCGAbiolinks", "igraph",
-                       "SummarizedExperiment", "DT", "latex2exp", "gridExtra", "cowplot")
+required_packages <- c("BiocGenerics", "DESeq2", "psych", "NetworkToolbox", 
+                       "ggplot2", "GGally", "sna", "network", "TCGAbiolinks", 
+                       "igraph", "SummarizedExperiment", "DT", "latex2exp", "gridExtra", 
+                       "cowplot", "poweRlaw")
 
 lapply(required_packages, library, character.only = TRUE)
 
@@ -106,6 +107,7 @@ women <- intersect(patients,
 men <- intersect(patients,
                  clinical.query[clinical.query$gender == "male",]$submitter_id)
 
+# Split data according to gender
 expr.C.women <- rna.expr.data.C[,women]
 expr.C.men <- rna.expr.data.C[,men]
 
@@ -137,10 +139,9 @@ dds.men <- DESeqDataSetFromMatrix(countData=full.men,
 
 # Perform normalization
 dds.men <- estimateSizeFactors(dds.men)
-normalized.mens <- counts(dds.men, 
+normalized.men <- counts(dds.men, 
                             normalized=TRUE)
 
-sum(rowSums(normalized.mens == 0) == dim(full.men)[2]) # No null rows :)
 
 # Split back the table
 expr.C.men <- as.data.frame(normalized.men[, 1:dim(expr.C.men)[2]])
@@ -195,6 +196,7 @@ expr.C.women <- expr.C.women[genes.c,]
 
 expr.N.men <- expr.N.men[genes.n,]
 expr.N.women <- expr.N.women[genes.n,]
+
 
 # Differentially Expressed Genes (DEGs) -----------------------------------
 
@@ -318,20 +320,18 @@ overlapping.DEGs <- intersect(deg.genes.men, deg.genes.women)
 overlapping.DEGs.info <- genes.info[overlapping.DEGs,]
 write.csv2(overlapping.DEGs.info, "overlappingDEGS.csv")
 
+sum(expr.table.men[overlapping.DEGs,]$diffexpressed == "UP")
 
 # Differential co-expression network  -------------------------------------
 
+Z <- 2
 
-Z <- 3 # we choose to set a higher value of Z statistic due to a very dense behavior of the graph connectivity with lower values
+# We will treat the two conditions separately men/woman
+expr.C.men <- log2(expr.C.men+1)
+expr.C.women <- log2(expr.C.women+1)
 
-# Before computing correlations, we log transform the data using log2(x+1)
-#We will treat the two conditions separately men/woman
-
-#filtr.expr.c.men <- log2(expr.C.men+1)
-#filtr.expr.n.men <- log2(expr.N.men+1) 
-#filtr.expr.c.women <- log2(expr.C.women+1)
-#filtr.expr.n.women <- log2(expr.N.women+1) 
-
+expr.N.men <- log2(expr.N.men+1)
+expr.N.women <- log2(expr.N.women+1)
 
 # Create the nets
 # Correlation matrix for the cancer network
@@ -347,7 +347,6 @@ cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise",
                            method = "pearson", adjust="fdr", ci=FALSE)
 cor.mat.N.women <- corr.test(t(expr.N.women), use = "pairwise", 
                              method = "pearson", adjust="fdr", ci=FALSE)
-?log
 
 # Fisher transform function
 
@@ -384,12 +383,12 @@ adj.mat.women <- 1 * (abs(Z.women) > Z)
 
 # Build the differential expression networks
 
-DEnet.men <- as.network(adj.mat.men, directed = FALSE)
-DEnet.women <- as.network(adj.mat.women, directed=FALSE)
+DEnet.men <- as.network(component.largest(as.network(adj.mat.men, directed = FALSE), result = "graph"))
+DEnet.women <- as.network(component.largest(as.network(adj.mat.women, directed=FALSE), result = "graph"))
 
 # Men analysis
-network.size(DEnet.men) #649
-network.edgecount(DEnet.men) # 6504
+network.size(DEnet.men) 
+network.edgecount(DEnet.men) 
 network.density(DEnet.men)
 
 d.men <- sna::degree(DEnet.men, gmode = 'graph')
@@ -397,23 +396,21 @@ names(d.men) <- network.vertex.names(DEnet.men)
 
 # Print the histogram of the degree together with a line for the 95% quantile
 q.men <- quantile(d.men[d.men>0],0.95)
-hist(d.men,col = "lightblue", main = "Degree distribution - Male population")
+hist(d.men,col = "lightblue", breaks = 80, main="")
 abline(v=q.men, col="red", lty = 'dotted')
 
 hubs.men <- d.men[d.men>=q.men]
-length(hubs.men) # 33
+length(hubs.men) 
 
-# Power law: Another way to check if a network is scale free is to verify if it
-# follows the power law. i.e. there should be a link between the fraction of 
-# nodes f(k) with degree k and k itself f(k) ⁓ k^(-γ) (usually 2< γ <3)
+# Deeper into degree distribution
 d.men.table <- table(d.men)
 
 # Convert the table to a data frame
 d.men.fd <- data.frame(degree = as.numeric(names(d.men.table)),
-                       count = as.numeric(d.men.table)/length(hubs.men))
+                       count = as.numeric(d.men.table))
 
 plot(log(d.men.fd$degree), log(d.men.fd$count), 
-     xlab = "Degree", ylab = "Degree Count", 
+     xlab = "log.Degree", ylab = "log.DegreeCount", 
      pch = 16, col = "lightblue")
 
 x.men <- log(d.men.fd$degree)
@@ -428,33 +425,31 @@ abline(a = as.numeric(model.lm.men$coefficients[1]),
        lty='dotted')
 
 # Women analysis
-network.size(DEnet.women) #649
-network.edgecount(DEnet.women) # 5562
-network.density(DEnet.women) #0.0265
+network.size(DEnet.women) 
+network.edgecount(DEnet.women) 
+network.density(DEnet.women) 
 
 d.women <- sna::degree(DEnet.women, gmode = 'graph')
 names(d.women) <- network.vertex.names(DEnet.women)
 
 # Print the histogram of the degree together with a line for the 95% quantile
 q.women <- quantile(d.women[d.women>0],0.95)
-hist(d.women,col = "lightblue", main = "Degree distribution - Male population")
+hist(d.women,col = "pink", breaks = 80, main = "")
 abline(v=q.women, col="red", lty = 'dotted')
 
 hubs.women <- d.women[d.women>=q.women]
-length(hubs.women) # 32
+length(hubs.women) 
 
-# Power law: Another way to check if a network is scale free is to verify if it
-# follows the power law. i.e. there should be a link between the fraction of 
-# nodes f(k) with degree k and k itself f(k) ⁓ k^(-γ) (usually 2< γ <3)
+# Deeper into degree distribution
 d.women.table <- table(d.women)
 
 # Convert the table to a data frame
 d.women.fd <- data.frame(degree = as.numeric(names(d.women.table)),
-                       count = as.numeric(d.women.table)/length(hubs.women))
+                         count = as.numeric(d.women.table))
 
 plot(log(d.women.fd$degree), log(d.women.fd$count), 
-     xlab = "Degree", ylab = "Degree Count", 
-     pch = 16, col = "lightblue")
+     xlab = "log.Degree", ylab = "log.DegreeCount", 
+     pch = 16, col = "pink")
 
 x.women <- log(d.women.fd$degree)
 y.women <- log(d.women.fd$count)
@@ -469,6 +464,24 @@ abline(a = as.numeric(model.lm.women$coefficients[1]),
 
 # Overlapping hubs
 overlapping.hubs <- intersect(names(hubs.men), names(hubs.women))
+overlapping.hubs
+
+# Comparing fitted line with MLE for power law
+
+pl.men <- displ$new(rep(d.men.fd$degree, d.men.fd$count))
+est.men <- estimate_xmin(pl.men)
+pl.men$setXmin(est.men)
+
+alpha.men <- pl.men$pars
+xmin.men <- pl.men$xmin
+  
+pl.women <- displ$new(rep(d.women.fd$degree, d.women.fd$count))
+est.women <- estimate_xmin(pl.women)
+pl.women$setXmin(est.women)
+
+# Get the estimated parameters
+alpha.women <- pl.women$pars
+xmin.women <- pl.women$xmin
 
 #_______________________________________________________________________________
 
@@ -505,7 +518,7 @@ names(d.C) <- network.vertex.names(DEnet.C)
 
 # Print the histogram of the degree together with a line for the 95% quantile
 q.C <- quantile(d.C[d.C>0],0.95)
-hist(d.C,col = "lightblue", main = "Degree distribution - Male population")
+hist(d.C,col = "lightgreen", breaks=80, main = "")
 abline(v=q.C, col="red", lty = 'dotted')
 
 hubs.C <- names(d.C)[d.C>=q.C]
@@ -519,12 +532,12 @@ d.C.table <- table(d.C)
 
 # Convert the table to a data frame
 d.C.fd <- data.frame(degree = as.numeric(names(d.C.table)),
-                       count = as.numeric(d.C.table)/length(hubs.C))
+                       count = as.numeric(d.C.table))
 
 plot(log(d.C.fd$degree), log(d.C.fd$count), 
-     xlab = "Degree", ylab = "Degree Count", 
-     main = "Degree Distribution - Male DEnetwork", 
-     pch = 16, col = "lightblue")
+     xlab = "log.Degree", ylab = "log.DegreeCount", 
+     main = "", 
+     pch = 16, col = "lightgreen")
 
 x.C <- log(d.C.fd$degree)
 y.C <- log(d.C.fd$count)
@@ -534,9 +547,17 @@ model.lm.C$coefficients
 abline(a = as.numeric(model.lm.C$coefficients[1]), 
        b = as.numeric(model.lm.C$coefficients[2]), col = 'red', lty='dotted')
 
-intersect(overlapping.hubs, hubs.C)
+intersect(names(hubs.men), hubs.C)
+intersect(names(hubs.women), hubs.C)
 
-#-------------------------------------------------------------------------------
+# MLE for power-law
+pl.C <- displ$new(rep(d.C.fd$degree, d.C.fd$count))
+est.C <- estimate_xmin(pl.C)
+pl.C$setXmin(est.C)
+
+alpha.C <- pl$pars
+xmin.C <- pl$xmin
+
 
 # Patient Similarity Network ----------------------------------------------
 
@@ -564,7 +585,7 @@ qval.cp[lower.tri(qval.cp)] <- t(qval.cp)[lower.tri(qval.cp)]
 # Correlation network of cancer samples
 
 # Since the pvalues are all extremely small we use the correlation matrix directly to build the graph
-adj.mat.cp <- rho.cp * (abs(rho.cp) > 0.7)   
+adj.mat.cp <- rho.cp * (abs(rho.cp) > 0.85)   
 
 
 net.cp <- as.network(adj.mat.cp, directed = FALSE)
@@ -617,6 +638,7 @@ ggnet2(net.final.p,
 
 # Some insights on the retrieved communities
 node_mapping$community <- as.character(comm.res.p[,1])
+node_mapping$real_label <- gsub("\\.","-",node_mapping$real_label)
 communities <- clinical.query[clinical.query$submitter_id %in% node_mapping$real_label,]
 community.1 <- communities[communities$submitter_id %in% node_mapping[node_mapping$community == 1,]$real_label,]
 community.2 <- communities[communities$submitter_id %in% node_mapping[node_mapping$community == 2,]$real_label,]
@@ -637,7 +659,8 @@ prop.table(table(community.1$days_to_death))
 prop.table(table(community.2$days_to_death))
 
 
-# Optional task  ----------------------------------------------------------
+
+# Optional tasks: differential expression networks for normal tissue ----------------------------------------------------------
 
 cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise", 
                            method = "pearson", adjust="fdr", ci=FALSE)
@@ -654,23 +677,23 @@ n.N.men <- dim(expr.N.men)[2]
 n.N.women <- dim(expr.N.women)[2]
 Z.N <- (cor.mat.N.men - cor.mat.N.women)/(sqrt(1/(n.N.men - 3)) + (sqrt(1/(n.N.women - 3)) ) )
 
-adj.mat.N <- 1 * (abs(Z.N) > 2.5) #Try to change Z values and see how change the connectivity 
+adj.mat.N <- 1 * (abs(Z.N) > Z) #Try to change Z values and see how change the connectivity 
 table(adj.mat.N)
 
 
-DEnet.N <- as.network(adj.mat.N, directed=FALSE)
+DEnet.N <- as.network(component.largest(as.network(adj.mat.N, directed=FALSE), result='graph'))
 
-# Men analysis
-network.size(DEnet.N) #649
-network.edgecount(DEnet.N) # 41
-network.density(DEnet.N) #0.000195
+# Network analysis
+network.size(DEnet.N) 
+network.edgecount(DEnet.N) 
+network.density(DEnet.N)
 
 d.N <- sna::degree(DEnet.N, gmode = 'graph')
 names(d.N) <- network.vertex.names(DEnet.N)
 
 # Print the histogram of the degree together with a line for the 95% quantile
 q.N <- quantile(d.N[d.N>0],0.95)
-hist(d.N,col = "lightblue", main = "Degree distribution - Cancer population")
+hist(d.N,col = "gold", breaks=50, main = "")
 abline(v=q.N, col="red", lty = 'dotted')
 
 hubs.N <- d.N[d.N>=q.N]
@@ -680,7 +703,7 @@ d.N.table <- table(d.N)
 
 # Convert the table to a data frame
 d.N.fd <- data.frame(degree = as.numeric(names(d.N.table)),
-                     count = as.numeric(d.N.table)/length(hubs.N))
+                     count = as.numeric(d.N.table))
 
 
 x.N <- log(d.N.fd$degree)
@@ -688,7 +711,65 @@ y.N <- log(d.N.fd$count)
 x.N <- cbind(1, x.N[2:length(x.N)])
 model.lm.N <- glm.fit(x.N, y.N[2:length(y.N)])
 beta.n <- model.lm.N$coefficients
-plot(x.N[,2], y.N[2:length(y.N)], xlab = "log(degree)", ylab = "log(count)", main = "Degree distribution Cancer pop. ",pch = 16, col = "lightblue")
+plot(x.N[,2], y.N[2:length(y.N)], 
+     xlab = "log.Degree", ylab = "log.Count", main = "",pch = 16, col = "gold")
 
 # Add the fitted line
 abline(a = beta.n[1], b = beta.n[2], col = 'red', lty = 'dotted')
+
+# MLE for power-law
+pl.N <- displ$new(rep(d.N.fd$degree, d.N.fd$count))
+est.N <- estimate_xmin(pl.N)
+pl.N$setXmin(est.N)
+
+alpha.N <- pl.N$pars
+xmin.N <- pl.N$xmin
+
+# Comparing with previous results
+
+intersect(names(hubs.N), names(hubs.men))
+intersect(names(hubs.N), names(hubs.women))
+
+# Optional tasks: signed network analysis -------------------------------------------------
+
+cor.mat.C.men <- corr.test(t(expr.C.men), use = "pairwise", 
+                           method = "pearson", adjust="fdr", ci=FALSE)
+cor.mat.C.women <- corr.test(t(expr.C.women), use = "pairwise", 
+                             method = "pearson", adjust="fdr", ci=FALSE)
+
+#fisher transform
+cor.mat.C.men <- Fischer.Z(cor.mat.C.men$r)
+cor.mat.C.women <- Fischer.Z(cor.mat.C.women$r)
+
+n.C.men <- dim(expr.C.men)[2]
+n.C.women <- dim(expr.C.women)[2]
+Z.C <- (cor.mat.C.men - cor.mat.C.women)/(sqrt(1/(n.C.men - 3)) + (sqrt(1/(n.C.women - 3)) ) )
+adj.C.pos <- 1 * (Z.C > Z) 
+adj.C.neg <- 1 * (Z.C < -Z)
+table(adj.C.neg)
+
+#get the networks
+DEnet.pos <- as.network(adj.C.pos, directed=FALSE)
+DEnet.neg <- as.network(adj.C.neg, directed=FALSE)
+
+# Plot netwroks
+plot.network(DEnet.pos, displaylabels = FALSE, main = "Cancer Tissue positive Network")
+plot.network(DEnet.neg, displaylabels = FALSE, main = "Cancer Tissue negative Network")
+
+# Retrieve degree distribution
+d.pos <- sna::degree(DEnet.pos, gmode = 'graph')
+d.neg <- sna::degree(DEnet.neg, gmode='graph')
+names(d.pos) <- network.vertex.names(DEnet.pos)
+names(d.neg) <- network.vertex.names(DEnet.neg)
+
+# Extract hubs for the two subnetworks
+q_pos <- quantile(d.pos[d.pos>0],0.95)
+hubs.pos <- names(d.pos)[d.pos>=q_pos]
+length(hubs.pos) 
+
+
+q_neg <- quantile(d.neg[d.neg>0],0.95)
+hubs.neg <- names(d.neg)[d.neg>=q_neg]
+length(hubs.neg) 
+
+intersect(hubs.pos,hubs.neg)
