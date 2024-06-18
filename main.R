@@ -73,7 +73,7 @@ dim(rna.expr.data.N)
 full.data <- data.frame(full.data)
 
 # Let's read the patients which we are interested into
-patients <- read.table("annex_1.txt", stringsAsFactors=FALSE)[,1]
+patients <- read.table("input/annex_1.txt", stringsAsFactors=FALSE)[,1]
 
 # Looking for duplicates
 dim(rna.expr.data.N)
@@ -179,7 +179,7 @@ expr.N.women <- as.data.frame(normalized.women[, (dim(expr.C.women)[2]+1):dim(no
 
 # Select the genes of interest
 
-genes <- read.table("gene-list2.txt", stringsAsFactors=FALSE)[,1]
+genes <- read.table("input/gene-list2.txt", stringsAsFactors=FALSE)[,1]
 
 genes.id <- genes.info[genes.info$gene_name %in% genes, "gene_id"]
 
@@ -196,6 +196,7 @@ expr.C.women <- expr.C.women[genes.c,]
 
 expr.N.men <- expr.N.men[genes.n,]
 expr.N.women <- expr.N.women[genes.n,]
+
 
 
 # Differentially Expressed Genes (DEGs) -----------------------------------
@@ -318,7 +319,7 @@ grid.arrange(
 
 overlapping.DEGs <- intersect(deg.genes.men, deg.genes.women)
 overlapping.DEGs.info <- genes.info[overlapping.DEGs,]
-write.csv2(overlapping.DEGs.info, "overlappingDEGS.csv")
+write.csv2(overlapping.DEGs.info, "output/overlappingDEGS.csv")
 
 sum(expr.table.men[overlapping.DEGs,]$diffexpressed == "UP")
 
@@ -554,8 +555,8 @@ pl.C <- displ$new(rep(d.C.fd$degree, d.C.fd$count))
 est.C <- estimate_xmin(pl.C)
 pl.C$setXmin(est.C)
 
-alpha.C <- pl$pars
-xmin.C <- pl$xmin
+alpha.C <- pl.C$pars
+xmin.C <- pl.C$xmin
 
 
 # Patient Similarity Network ----------------------------------------------
@@ -593,12 +594,12 @@ net.cp <- as.network(adj.mat.cp, directed = FALSE)
 l.comp.p <- component.largest(net.cp, result = "graph")
 l.comp.p <- adj.mat.cp[rownames(l.comp.p), rownames(l.comp.p)]
 
-write.csv2(l.comp.p, "input-matrix-c.csv")
-# python btc-community-c.py input-matrix-c.csv
+write.csv2(l.comp.p, "output/input-matrix-c.csv")
+# python output/btc-community-c.py input-matrix-c.csv
 
 # Read results 
 
-comm.res.p <- read.csv2("output.txt", header = FALSE)
+comm.res.p <- read.csv2("output/output_c.txt", header = FALSE)
 rownames(comm.res.p) <- rownames(l.comp.p)
 sort(table(comm.res.p[,1]), decreasing = T)
 length(table(comm.res.p[,1]))
@@ -656,6 +657,7 @@ prop.table(table(community.2$race))
 
 prop.table(table(community.1$days_to_death))
 prop.table(table(community.2$days_to_death))
+
 
 
 
@@ -729,8 +731,10 @@ xmin.N <- pl.N$xmin
 intersect(names(hubs.N), names(hubs.men))
 intersect(names(hubs.N), names(hubs.women))
 
-# Optional tasks: signed network analysis -------------------------------------------------
+# Optional task - Signed network analysis ---------------------------------
 
+
+Z = 2
 cor.mat.C.men <- corr.test(t(expr.C.men), use = "pairwise", 
                            method = "pearson", adjust="fdr", ci=FALSE)
 cor.mat.C.women <- corr.test(t(expr.C.women), use = "pairwise", 
@@ -751,10 +755,7 @@ table(adj.C.neg)
 DEnet.pos <- as.network(adj.C.pos, directed=FALSE)
 DEnet.neg <- as.network(adj.C.neg, directed=FALSE)
 
-# Plot netwroks
-plot.network(DEnet.pos, displaylabels = FALSE, main = "Cancer Tissue positive Network")
-plot.network(DEnet.neg, displaylabels = FALSE, main = "Cancer Tissue negative Network")
-
+?plot.network
 # Retrieve degree distribution
 d.pos <- sna::degree(DEnet.pos, gmode = 'graph')
 d.neg <- sna::degree(DEnet.neg, gmode='graph')
@@ -772,6 +773,92 @@ hubs.neg <- names(d.neg)[d.neg>=q_neg]
 length(hubs.neg) 
 
 intersect(hubs.pos,hubs.neg)
+
+
+# Plot netwroks
+hub_color <- "orchid"  # Color for hub vertices
+nonhub_color <- "grey"  # Color for non-hub vertices
+
+# Set up the plotting area with two plots side by side
+
+layout <- plot.network(DEnet.pos, edge.col = "lightgrey", vertex.cex = 0, displaylabels = FALSE, main = " ")
+par(mfrow = c(1, 2))  
+par(mar = c(2, 2, 2, 2))
+# Plot the positive network with the generated layout
+plot.network(DEnet.pos, coord = layout, edge.col = "lightgrey",
+             vertex.cex = ifelse(network.vertex.names(DEnet.pos) %in% hubs.pos, 1.3, 0.8),
+             vertex.col = ifelse(network.vertex.names(DEnet.pos) %in% hubs.pos, hub_color, nonhub_color),
+             displaylabels = FALSE, main = "")
+
+# Plot the negative network with the same layout
+plot.network(DEnet.neg, coord = layout, edge.col = "lightgrey",
+             vertex.cex = ifelse(network.vertex.names(DEnet.neg) %in% hubs.neg, 1.3, 0.8),
+             vertex.col = ifelse(network.vertex.names(DEnet.neg) %in% hubs.neg, hub_color, nonhub_color),
+             displaylabels = FALSE, main = "")
+
+#degree distribution and log log behaviour of signed networks
+d.neg <- sna::degree(DEnet.neg, gmode = 'graph')
+d.pos <- sna::degree(DEnet.pos, gmode = 'graph')
+names(d.neg) <- network.vertex.names(DEnet.neg)
+names(d.pos) <- network.vertex.names(DEnet.pos)
+# Print the histogram of the degree together with a line for the 95% quantile
+q.pos <- quantile(d.pos[d.pos>0],0.95)
+q.neg <- quantile(d.neg[d.neg>0],0.95)
+par(mfrow = c(1,1))  
+par(mar = c(4, 4, 4, 4))
+hist(d.pos,col = "orchid", breaks=50, main = "")
+abline(v=q.pos, col="red", lty = 'dotted')
+
+hist(d.neg,col = "orange", breaks=50, main = "")
+abline(v=q.neg, col="red", lty = 'dotted')
+
+d.pos.table <- table(d.pos)
+d.neg.table <- table(d.neg)
+# Convert the table to a data frame
+d.pos.fd <- data.frame(degree = as.numeric(names(d.pos.table)),
+                       count = as.numeric(d.pos.table))
+d.neg.fd <- data.frame(degree = as.numeric(names(d.neg.table)),
+                       count = as.numeric(d.neg.table))
+
+
+x.pos <- log(d.pos.fd$degree)
+y.pos <- log(d.pos.fd$count)
+x.pos <- cbind(1, x.pos[2:length(x.pos)])
+model.lm.pos <- glm.fit(x.pos, y.pos[2:length(y.pos)])
+beta.pos <- model.lm.pos$coefficients
+plot(x.pos[,2], y.pos[2:length(y.pos)], 
+     xlab = "log.Degree", ylab = "log.Count", main = "",pch = 16, col = "orchid")
+
+# Add the fitted line
+abline(a = beta.pos[1], b = beta.pos[2], col = 'red', lty = 'dotted')
+
+
+x.neg <- log(d.neg.fd$degree)
+y.neg <- log(d.neg.fd$count)
+x.neg <- cbind(1, x.neg[2:length(x.neg)])
+model.lm.neg <- glm.fit(x.neg, y.neg[2:length(y.neg)])
+beta.neg <- model.lm.neg$coefficients
+plot(x.neg[,2], y.neg[2:length(y.neg)], 
+     xlab = "log.Degree", ylab = "log.Count", main = "",pch = 16, col = "orange")
+
+# Add the fitted line
+abline(a = beta.neg[1], b = beta.neg[2], col = 'red', lty = 'dotted')
+
+
+# MLE for power-law
+pl.pos <- displ$new(rep(d.pos.fd$degree[2:length(d.pos.fd$degree)], d.pos.fd$count[2:length(d.pos.fd$count)]))
+est.pos <- estimate_xmin(pl.pos)
+pl.pos$setXmin(est.pos)
+alpha.pos <- pl.pos$pars
+xmin.pos <- pl.pos$xmin
+
+# MLE for power-law
+pl.neg <- displ$new(rep(d.neg.fd$degree[2:length(d.neg.fd$degree)], d.neg.fd$count[2:length(d.neg.fd$count)]))
+est.neg <- estimate_xmin(pl.neg)
+pl.neg$setXmin(est.neg)
+alpha.neg <- pl.neg$pars
+xmin.neg <- pl.neg$xmin
+
 
 
 # Subnetwork induced by hubs visualization --------------------------------
@@ -818,11 +905,13 @@ subnet.plot <- function(g, suppnet, nodes, color) {
   edge_colors <- ifelse(edge_df[,1] %in% network.vertex.names(suppnet)[nodes] & 
                         edge_df[,2] %in% network.vertex.names(suppnet)[nodes], color, "grey90")
   edge_sizes <- ifelse(edge_df[,1] %in% network.vertex.names(suppnet)[nodes] & 
-                       edge_df[,2] %in% network.vertex.names(suppnet)[nodes], 1, 0.1)
+                       edge_df[,2] %in% network.vertex.names(suppnet)[nodes], 1, 0.00001)
   
   # Plot the network
   ggnet2(
     g,
+    mode = "spring",
+    layout.par = list(niter = 10) ,
     node.size = node_sizes,
     node.color = node_colors,
     edge.color = edge_colors,
@@ -833,4 +922,8 @@ subnet.plot <- function(g, suppnet, nodes, color) {
 
 
 subnet.plot(g.men, DEnet.men, neighbors.men, 'darkblue')
+subnet.plot(g.women, DEnet.women, neighbors.women, 'darkred')
+subnet.plot(g.C, DEnet.C, neighbors.C, 'darkgreen')
+subnet.plot(g.N, DEnet.N, neighbors.N, 'gold')
+
 
