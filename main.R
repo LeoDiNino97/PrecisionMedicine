@@ -22,7 +22,8 @@ proj <- "TCGA-LIHC"
 directory <- proj
 
 # Look for all data linked to a "Primary Tumor" sample and store them in a dataframe
-rna.query.C <- GDCquery(project = proj, data.category = "Transcriptome Profiling",
+rna.query.C <- GDCquery(project = proj, 
+                        data.category = "Transcriptome Profiling",
                         data.type = "Gene Expression Quantification",
                         workflow.type = "STAR - Counts",
                         sample.type = "Primary Tumor")
@@ -35,7 +36,8 @@ genes.info.c <- BiocGenerics::as.data.frame(rowRanges(rna.data.C))
 
 
 # Apply the same procedure to the "Normal tissue"
-rna.query.N <- GDCquery(project = proj, data.category = "Transcriptome Profiling", 
+rna.query.N <- GDCquery(project = proj, 
+                        data.category = "Transcriptome Profiling", 
                         data.type = "Gene Expression Quantification", 
                         workflow.type = "STAR - Counts", 
                         sample.type = "Solid Tissue Normal")
@@ -196,6 +198,7 @@ expr.C.women <- expr.C.women[genes.c,]
 
 expr.N.men <- expr.N.men[genes.n,]
 expr.N.women <- expr.N.women[genes.n,]
+
 
 
 
@@ -661,6 +664,7 @@ prop.table(table(community.2$days_to_death))
 
 
 
+
 # Optional tasks: differential expression networks for normal tissue ----------------------------------------------------------
 
 cor.mat.N.men <- corr.test(t(expr.N.men), use = "pairwise", 
@@ -755,7 +759,6 @@ table(adj.C.neg)
 DEnet.pos <- as.network(adj.C.pos, directed=FALSE)
 DEnet.neg <- as.network(adj.C.neg, directed=FALSE)
 
-?plot.network
 # Retrieve degree distribution
 d.pos <- sna::degree(DEnet.pos, gmode = 'graph')
 d.neg <- sna::degree(DEnet.neg, gmode='graph')
@@ -859,8 +862,93 @@ pl.neg$setXmin(est.neg)
 alpha.neg <- pl.neg$pars
 xmin.neg <- pl.neg$xmin
 
+# Degree correlation of the two networks
+clean_matrix <- function(mat) {
+  mat[is.na(mat) | is.nan(mat) | is.infinite(mat)] <- 0
+  return(mat)
+}
+adj.C.pos <- clean_matrix(adj.C.pos)
+adj.C.neg <- clean_matrix(adj.C.neg)
+
+g.1 <- graph_from_adjacency_matrix(adj.C.pos, mode = "undirected")
+g.2 <- graph_from_adjacency_matrix(adj.C.neg, mode = "undirected")
+
+deg.1 <- degree(g.1)
+deg.2 <- degree(g.2)
+
+edge_list1 <- get.edgelist(g.1)
+edge_list2 <- get.edgelist(g.2)
+
+edge_degrees1 <- data.frame(
+  from = deg.1[edge_list1[,1]],
+  to = deg.1[edge_list1[,2]]
+)
 
 
+edge_degrees2 <- data.frame(
+  from = deg.2[edge_list2[,1]],
+  to = deg.2[edge_list2[,2]]
+)
+
+correlation1 <- cor(edge_degrees1$from, edge_degrees1$to)
+
+plot(
+  edge_degrees1$from,
+  edge_degrees1$to,
+  xlab = "Degree of node i",
+  ylab = "Degree of node j",
+  main = "Degree Correlation",
+  pch = 19,
+  col = rgb(0, 0, 0, 0.5) # semi-transparent points
+)
+
+
+correlation2 <- cor(edge_degrees2$from, edge_degrees2$to)
+
+plot(
+  edge_degrees2$from,
+  edge_degrees2$to,
+  xlab = "Degree of node i",
+  ylab = "Degree of node j",
+  main = "Degree Correlation",
+  pch = 19,
+  col = rgb(0, 0, 0, 0.5) # semi-transparent points
+)
+
+degree_pairs1 <- table(edge_degrees1)
+degree_pairs2 <- table(edge_degrees2)
+
+# Convert the table to a data frame for ggplot
+degree_pairs_df1 <- as.data.frame(degree_pairs1)
+degree_pairs_df2 <- as.data.frame(degree_pairs2)
+
+# Plot the heatmap
+ggplot(degree_pairs_df1, aes(x = from, y = to, fill = Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(
+    title = "Degree Correlation Heatmap",
+    x = "Degree of node i",
+    y = "Degree of node j",
+    fill = "Frequency"
+  ) +
+  theme_minimal()
+
+ggplot(degree_pairs_df2, aes(x = from, y = to, fill = Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(
+    title = "Degree Correlation Heatmap",
+    x = "Degree of node i",
+    y = "Degree of node j",
+    fill = "Frequency"
+  ) +
+  theme_minimal()
+
+# Easier way
+
+assortativity_degree(g.1)
+assortativity_degree(g.2)
 # Subnetwork induced by hubs visualization --------------------------------
 
 DEnet.men <- as.network(adj.mat.men, directed = FALSE)
